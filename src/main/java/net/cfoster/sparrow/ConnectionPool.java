@@ -41,8 +41,8 @@ public class ConnectionPool
 
   public void pool(SocketChannel socketChannel, long expiryTime)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.log.info(this+".pool("+socketChannel+")");
+    if(parent.isLoggable(Level.INFO))
+      parent.info("pool_inv", this, socketChannel);
 
     long expiryTimeMs =
       System.currentTimeMillis() +

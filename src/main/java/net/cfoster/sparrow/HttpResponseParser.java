@@ -24,10 +24,10 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.EventListener;
-import java.util.LinkedList;
 import java.util.logging.Level;
 
-public class HttpResponseParser implements Runnable, EventListener {
+public class HttpResponseParser implements Runnable, EventListener
+{
   private static final byte CR = (byte)0x0D;
   private static final byte LF = (byte)0x0A;
 
@@ -130,17 +130,23 @@ public class HttpResponseParser implements Runnable, EventListener {
   /** Total size / maximum capacity of the direct region of memory. **/
   private final int bufferSize = 1024 * 1024 * 4; // make this configurable
 
+  /** Used when finally giving data to the user, [TODO]: make configurable. **/
+  private byte[] jbuffer = new byte[1024 * 1024 * 10];
+
+  /** amount of bytes used inside jbuffer[] **/
+  private int jbufferSize=0;
+
   private final void allocBuffer() {
 
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("alloc_buffer", this, bufferSize);
+    if(httpClient.isLoggable((Level.FINER)))
+      httpClient.finer("alloc_buffer", this, bufferSize);
 
     bufferAddress = unsafe.allocateMemory(bufferSize);
   }
 
   private final void deallocBuffer() {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("dealloc_buffer", this, bufferSize);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("dealloc_buffer", this, bufferSize);
 
     unsafe.freeMemory(bufferAddress);
   }
@@ -173,44 +179,23 @@ public class HttpResponseParser implements Runnable, EventListener {
 
       lock.notify();
     }
-/**
-    byte[] javaBuffer = null;
-    try {
-      javaBuffer = new byte[length];
-    } catch(OutOfMemoryError e) {
-      throw e;
-    }
-
-    buffer.get(javaBuffer, start, length);
-
-    synchronized(inputQueueBackLog)
-    {
-      inputQueueBackLog.add(javaBuffer);
-
-      if(inputQueueBackLog.size() > 50) {
-        acceptingDataEvent(endHandler, false);
-      }
-
-
-      inputQueueBackLog.notify();
-    }
-**/
   }
 
   HttpResponseParser(
     HttpClient httpClient,
     SocketChannel socketChannel)
   {
-    HttpClient.log.info("new "+this);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("new_obj", this);
 
     if(httpClient == null)
       throw new RuntimeException(
-        HttpClient.log.getResourceBundle().getString("HttpResponseParser_inv1")
+        httpClient.format("HttpResponseParser_inv1")
       );
 
     if(socketChannel == null)
       throw new RuntimeException(
-        HttpClient.log.getResourceBundle().getString("HttpResponseParser_inv2")
+        httpClient.format("HttpResponseParser_inv2")
       );
 
     this.httpClient = httpClient;
@@ -225,17 +210,17 @@ public class HttpResponseParser implements Runnable, EventListener {
   {
     if(processingThread != null && processingThread != thread)
     {
-      if(HttpClient.log.isLoggable(Level.WARNING))
-        HttpClient.log.log(Level.WARNING,
-          "hrp_newthread", new Object[]{processingThread, thread});
+      if(httpClient.isLoggable(Level.WARNING))
+        httpClient.log(Level.WARNING,
+          "hrp_newthread", processingThread, thread);
       processingThread = thread;
     }
   }
 
   public void setHttpResponseHandler(HttpResponseHandler endHandler)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("setHttpResponseHandler_inv", this, endHandler);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("setHttpResponseHandler_inv", this, endHandler);
 
     if(endHandler != null)
       allocBuffer();
@@ -259,8 +244,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
   public void setSendRequest(SendRequest request)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("setHttpRequest_inv", this, request);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("setHttpRequest_inv", this, request);
 
     this.sendRequest = request;
 
@@ -268,17 +253,14 @@ public class HttpResponseParser implements Runnable, EventListener {
       inetSocketAddress = request.address;
   }
 
-  byte[] jbuffer = new byte[1024 * 1024 * 10]; // [TODO]: must be configurable.
-
-  int jbufferSize=0;
   public void run()
   {
     setThread(Thread.currentThread());
 
     while(true)
     {
-      if (HttpClient.log.isLoggable(Level.INFO))
-        HttpClient.info("hrp_run_entered");
+      if (httpClient.isLoggable(Level.FINER))
+        httpClient.finer("hrp_run_entered");
 
       // byte[] jbuffer = null;
 
@@ -291,7 +273,7 @@ public class HttpResponseParser implements Runnable, EventListener {
             lock.wait();
           }
           catch(InterruptedException e) {
-            HttpClient.log.throwing(this.getClass().getName(), "run", e);
+            httpClient.throwing(this.getClass().getName(), "run", e);
           }
         }
 
@@ -321,12 +303,12 @@ public class HttpResponseParser implements Runnable, EventListener {
    */
   public void handleData(ByteBuffer rsp, int start, int length)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("hrp_handle_data", this, start, length, getContext());
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("hrp_handle_data", this, start, length, getContext());
 
     if(!hasEndHandler()) {
       throw new RuntimeException(
-        HttpClient.log.getResourceBundle().getString("hrh_not_set")
+        httpClient.format("hrh_not_set")
       );
     }
 
@@ -353,8 +335,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
   public boolean handleResponse(byte[] rsp, int start, int length)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("hrh_handleResponse", start, length, hasEndHandler());
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("hrh_handleResponse", start, length, hasEndHandler());
 
     switch(getContext())
     {
@@ -363,9 +345,7 @@ public class HttpResponseParser implements Runnable, EventListener {
       case CONTEXT_HTTP_BODY:
         return bodyResponse(rsp, start, length);
       default:
-        throw new RuntimeException(
-          HttpClient.log.getResourceBundle().getString("unknown_state")
-        );
+        throw new RuntimeException(httpClient.format("unknown_state"));
     }
   }
 
@@ -376,8 +356,8 @@ public class HttpResponseParser implements Runnable, EventListener {
   **/
   private boolean headerResponse(byte[] b, int start, int length)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("hrh_headerResponse_inv", start, length);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("hrh_headerResponse_inv", start, length);
 
     appendHeaderBuffer(b, start, length);
     return scanForLineFeeds();
@@ -399,8 +379,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
   private boolean scanForLineFeeds()
   {
-    if(HttpClient.log.isLoggable(Level.FINE))
-      HttpClient.info("hrh_scanForLineFeeds_inv", getContext());
+    if(httpClient.isLoggable(Level.FINEST))
+      httpClient.log(Level.FINEST, "hrh_scanForLineFeeds_inv", getContext());
 
     boolean retValue = false;
     for(hbScanIndex=Math.max(0,hbScanIndex-1);
@@ -435,9 +415,8 @@ public class HttpResponseParser implements Runnable, EventListener {
       }
     }
 
-    if(HttpClient.log.isLoggable(Level.FINE))
-      HttpClient.log.log(Level.FINE, "hrh_scanForLineFeeds_fin",
-        new Object[] { "hrh_scanForLineFeeds_fin", this, getContext() });
+    if(httpClient.isLoggable(Level.FINE))
+      httpClient.log(Level.FINE, "hrh_scanForLineFeeds_fin",this, getContext());
 
     return retValue;
   }
@@ -462,8 +441,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
   private void handleHeaderLineFeed(byte[] b, int start, int length)
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("hrh_handleHeaderLineFeed_inv",
+    if(httpClient.isLoggable(Level.FINEST))
+      httpClient.log(Level.FINEST, "hrh_handleHeaderLineFeed_inv",
         b.length, start, length, new String(b, start, length));
 
     int end = start + length;
@@ -741,8 +720,8 @@ public class HttpResponseParser implements Runnable, EventListener {
     // System.out.println(new String(b, start, length));
 
 
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("hrh_bodyResponse_inv", start, length);
+    if(httpClient.isLoggable(Level.FINER))
+      httpClient.finer("hrh_bodyResponse_inv", start, length);
 
     // byte[] temp = new byte[length];
     // System.arraycopy(b,start,temp,0,length);
@@ -774,8 +753,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
     if(isConnectionClose()) // Connection: close
     {
-      if(HttpClient.log.isLoggable(Level.INFO))
-        HttpClient.info("conn_alive", connectionAlive);
+      if(httpClient.isLoggable(Level.FINE))
+        httpClient.log(Level.FINE, "conn_alive", connectionAlive);
 
 /**
       synchronized(inputQueueBackLog)
@@ -868,8 +847,8 @@ public class HttpResponseParser implements Runnable, EventListener {
     {
       case 401: // Unauthorized
 
-        if(client.log.isLoggable(Level.INFO))
-          client.log.info("401_resending");
+        if(client.isLoggable(Level.INFO))
+          client.info("401_resending");
 
         request.request.addFailedAuthorizationAttempt();
 
@@ -898,7 +877,7 @@ public class HttpResponseParser implements Runnable, EventListener {
     httpVersion = b[7];
     httpStatusCode = 100 * (b[9] - 48) + 10 * (b[10] - 48) + (b[11] - 48);
 
-    if(httpClient.log.isLoggable(Level.INFO))
+    if(httpClient.isLoggable(Level.INFO))
       httpClient.info("rec_status_code", httpStatusCode);
 
     if(httpStatusCode == 401 &&
@@ -926,8 +905,8 @@ public class HttpResponseParser implements Runnable, EventListener {
 
   public void resetState()
   {
-    if(HttpClient.log.isLoggable(Level.INFO))
-      HttpClient.info("resetState_inv", this);
+    if(httpClient.isLoggable(Level.FINE))
+      httpClient.log(Level.FINE, "resetState_inv", this);
 
     contentLength = UNSET;
     contentReceived = 0;

@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.channels.spi.SelectorProvider;
+import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -41,11 +42,7 @@ public class HttpClient implements Runnable, ThreadFactory
    */
   private int DATA_INDUCTION_BUFFER_SIZE = 1024 * 100 * 7; // 700 KB
 
-  // The thread which selects keys.
-  // private Thread selectorThread = new Thread(this);
-
   /** The buffer into which we'll read data when it's available **/
-  // private final ByteBuffer readBuffer = ByteBuffer.allocateDirect(8192);
   private final ByteBuffer readBuffer =
     ByteBuffer.allocateDirect(getDataInductionBufferSize());
 
@@ -77,13 +74,22 @@ public class HttpClient implements Runnable, ThreadFactory
   /** e.g. HTTP/1.1 or HTTP/1.0 etc **/
   private byte[] transportProtocol = STR_HTTP_11;
 
-  public static Logger log = Logger.getAnonymousLogger("msg/sparrow");
+  private static final ResourceBundle	msgBundle =
+    ResourceBundle.getBundle("msg/sparrow");
 
+  private Logger log = null; // = Logger.getAnonymousLogger("msg/sparrow");
+
+/**
   static {
-    Level LOG_LEVEL = Level.OFF;
-    // Level LOG_LEVEL = Level.FINEST;
+    // Level LOG_LEVEL = Level.OFF;
+    Level LOG_LEVEL = Level.FINEST;
     log.setLevel(LOG_LEVEL);
+    ConsoleHandler handler = new ConsoleHandler();
+    handler.setLevel(LOG_LEVEL);
+    log.addHandler(handler);
+    log.setUseParentHandlers(false);
   }
+**/
 
   /**
    * for debugging purposes
@@ -155,7 +161,7 @@ public class HttpClient implements Runnable, ThreadFactory
     // FileHandler handler = new FileHandler("C:\\crf\\misc\\tmp\\out.log");
     // FileHandler handler = new FileHandler("M:\\out.log");
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("http_client_init", this);
 
     try {
@@ -197,15 +203,40 @@ public class HttpClient implements Runnable, ThreadFactory
     for(int i=0;i<requests.length;i++)
       sendImpl(requests[i]);
 
-    if(log.isLoggable(Level.INFO))
-      info("client_send_batch", requests.length);
+    if(isLoggable(Level.FINE))
+      log(Level.FINE, "client_send_batch", requests.length);
 
     selector.wakeup();
   }
 
-  public static final void info(String msg, Object... params) {
-    log.log(Level.INFO, msg, params);
+  /** short cut method, for info **/
+  final void info(String msg, Object... params) {
+    log(Level.INFO, msg, params);
   }
+
+  final void finer(String msg, Object... params) {
+    log(Level.FINER, msg, params);
+  }
+
+  final boolean isLoggable(Level level) {
+    return log != null && log.isLoggable(level);
+  }
+
+  final String format(String msg, Object... params) {
+    return MessageFormat.format(msgBundle.getString(msg), params);
+  }
+
+  final void log(Level level, String msg, Object... params) {
+    if(log != null)
+      log.log(level, format(msg, params));
+  }
+
+  void throwing(String sourceClass, String sourceMethod, Throwable thrown) {
+    if(log != null)
+      log.throwing(sourceClass, sourceMethod, thrown);
+  }
+
+
 
   private void sendImpl(SendRequest sendRequest) throws IOException
   {
@@ -213,8 +244,8 @@ public class HttpClient implements Runnable, ThreadFactory
     InetSocketAddress address = sendRequest.address;
     HttpResponseHandler handler = sendRequest.handler;
 
-    if(log.isLoggable(Level.INFO))
-      info("send_impl_inv1", request, address, handler);
+    if(isLoggable(Level.FINE))
+      log(Level.FINE, "send_impl_inv1", request, address, handler);
 
     // Start a new connection
 
@@ -231,8 +262,8 @@ public class HttpClient implements Runnable, ThreadFactory
     httpResponseParser.setHttpResponseHandler(handler);
     httpResponseParser.setSendRequest(sendRequest);
 
-    if(log.isLoggable(Level.INFO))
-      info("send_impl_inv2", httpResponseParser, handler);
+    if(isLoggable(Level.FINE))
+      log(Level.FINE, "send_impl_inv2", httpResponseParser, handler);
 
     // And queue the data we want written
     synchronized(pendingData)
@@ -240,8 +271,8 @@ public class HttpClient implements Runnable, ThreadFactory
       ArrayList queue = pendingData.get(socket);
       if (queue == null) {
         queue = new ArrayList();
-        if(log.isLoggable(Level.INFO))
-          info("no_pdq4socket",
+        if(isLoggable(Level.FINE))
+          log(Level.FINE, "no_pdq4socket",
             socket.hashCode(), socket, System.identityHashCode(queue));
 
         pendingData.put(socket, queue);
@@ -249,7 +280,7 @@ public class HttpClient implements Runnable, ThreadFactory
 
       queue.add(request);
 
-      if(log.isLoggable(Level.INFO))
+      if(isLoggable(Level.INFO))
         info("pdq_add", request, System.identityHashCode(queue), queue.size(),
              socket.hashCode(), socket);
     }
@@ -298,16 +329,16 @@ public class HttpClient implements Runnable, ThreadFactory
               break;
             }
 
-            if(log.isLoggable(Level.INFO))
+            if(isLoggable(Level.INFO))
               info("proc_change_request", change, pendingChanges.size());
           }
 
-          if(log.isLoggable(Level.INFO))
+          if(isLoggable(Level.INFO))
             info("clear_pending_changes", "Clearing", pendingChanges.size());
 
           pendingChanges.clear();
 
-          if(log.isLoggable(Level.INFO))
+          if(isLoggable(Level.INFO))
             info("clear_pending_changes", "Cleared", pendingChanges.size());
         }
 
@@ -315,8 +346,8 @@ public class HttpClient implements Runnable, ThreadFactory
         // long selectStart = System.currentTimeMillis();
         selector.select();
 
-        if(log.isLoggable(Level.INFO))
-          log.info("selector_selected");
+        if(isLoggable(Level.INFO))
+          info("selector_selected");
 
         // long selectFinish = System.currentTimeMillis();
         // int selectedKeysAmount = selector.selectedKeys().size();
@@ -331,8 +362,8 @@ public class HttpClient implements Runnable, ThreadFactory
 
           if(!key.isValid())
           {
-            if(log.isLoggable(Level.WARNING))
-              log.log(Level.WARNING, "key_invalid", key);
+            if(isLoggable(Level.WARNING))
+              log(Level.WARNING, "key_invalid", key);
             continue;
           }
 
@@ -355,7 +386,7 @@ public class HttpClient implements Runnable, ThreadFactory
       catch(CancelledKeyException e) {
         // this is to be expected ...
       } catch (Exception e) {
-        log.throwing(this.getClass().getName(), "run", e);
+        throwing(this.getClass().getName(), "run", e);
         e.printStackTrace();
       }
     }
@@ -411,14 +442,14 @@ public class HttpClient implements Runnable, ThreadFactory
     {
       numRead = socketChannel.read(readBuffer);
 
-      if(log.isLoggable(Level.FINEST))
-        log.log(Level.FINEST, "read_bytes", numRead);
+      if(isLoggable(Level.FINEST))
+        log(Level.FINEST, "read_bytes", numRead);
 
     }
     catch (IOException e)
     {
       e.printStackTrace();
-      log.throwing(this.getClass().getName(), "read", e);
+      throwing(this.getClass().getName(), "read", e);
       // The remote forcibly closed the connection, cancel
       // the selection key and close the channel.
       key.cancel();
@@ -494,7 +525,7 @@ public class HttpClient implements Runnable, ThreadFactory
     InetSocketAddress address,
     long keepAliveTimeout)
   {
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
     {
       info("resp_comp_ev_inv1", this, channel);
       info("resp_comp_ev_inv2", channel, channel.isConnected(),
@@ -521,20 +552,20 @@ public class HttpClient implements Runnable, ThreadFactory
 
     connectionPool.pool(channel, keepAliveTimeout);
 
-    if(log.isLoggable(Level.FINE)) {
-      log.log(Level.FINE, "active_conn_count",
+    if(isLoggable(Level.FINE)) {
+      log(Level.FINE, "active_conn_count",
         connectionPool.getActiveConnectionsCount());
     }
 
     selector.wakeup();
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("channel_back2pool", channel, address);
   }
 
   public void socketDiedEvent(SocketChannel channel)
   {
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("socket_died", channel.hashCode(), channel);
 
     synchronized(pendingChanges) {
@@ -594,26 +625,26 @@ public class HttpClient implements Runnable, ThreadFactory
     HttpRequest request,
     SocketChannel socket) throws IOException
   {
-    if(log.isLoggable(Level.INFO))
-      log.info("writeHttpRequest_inv");
+    if(isLoggable(Level.FINER))
+      finer("writeHttpRequest_inv");
 
     byte[] coreBuffer = new byte[1024 * 10]; // [TODO]: WASTE!!!!
 
     ByteBuffer messageHeader =  ByteBuffer.wrap(coreBuffer);
 
-    if(log.isLoggable(Level.INFO)) {
-      info("writeHttpRequest1", messageHeader);
-      info("writeHttpRequest2", request.getMethod());
+    if(isLoggable(Level.FINER)) {
+      finer("writeHttpRequest1", messageHeader);
+      finer("writeHttpRequest2", request.getMethod());
     }
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("writeHttpRequest3",
         new String(REQUEST_METHOD_STRING[request.getMethod()]));
 
     messageHeader.put(REQUEST_METHOD_STRING[request.getMethod()]);
 
-    if(log.isLoggable(Level.INFO))
-      info("writeHttpRequest4",
+    if(isLoggable(Level.FINER))
+      finer("writeHttpRequest4",
         new String(REQUEST_METHOD_STRING[request.getMethod()]));
 
     messageHeader.put(new byte[] { (byte)' ' });
@@ -711,7 +742,7 @@ public class HttpClient implements Runnable, ThreadFactory
     else
       forceWrite(socket, ByteBuffer.wrap(BIN_0x0D_0x0A));
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("wrote2socket", socket);
   }
 
@@ -763,20 +794,19 @@ public class HttpClient implements Runnable, ThreadFactory
       // Write until there's not more data ...
 
       if(queue == null) {
-        if(log.isLoggable(Level.WARNING))
-          log.warning("write1");
+        if(isLoggable(Level.WARNING))
+          log(Level.WARNING, "write1");
         return;
       }
 
       if(queue.isEmpty())
       {
-        if(log.isLoggable(Level.SEVERE))
-          log.log(Level.SEVERE, "write2",
-            new Object[] { queue, System.identityHashCode(queue)});
+        if(isLoggable(Level.SEVERE))
+          log(Level.SEVERE, "write2", queue, System.identityHashCode(queue));
         return;
       }
 
-      if(log.isLoggable(Level.INFO))
+      if(isLoggable(Level.INFO))
         info("write3",
           queue.size(), System.identityHashCode(queue), socketChannel);
 
@@ -792,8 +822,8 @@ public class HttpClient implements Runnable, ThreadFactory
         // data.
         key.interestOps(SelectionKey.OP_READ);
       } else {
-        if(log.isLoggable(Level.WARNING))
-          log.warning("queue_not_empty");
+        if(isLoggable(Level.WARNING))
+          log(Level.WARNING, "queue_not_empty");
       }
 
     }
@@ -802,7 +832,7 @@ public class HttpClient implements Runnable, ThreadFactory
   private void finishConnection(SelectionKey key) throws IOException
   {
     SocketChannel channel = (SocketChannel)key.channel();
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("finish_conn", key, channel.hashCode(), channel);
 
     // Finish the connection. If the connection operation failed
@@ -812,18 +842,17 @@ public class HttpClient implements Runnable, ThreadFactory
     {
       channel.finishConnect();
 
-      if(log.isLoggable(Level.INFO))
+      if(isLoggable(Level.INFO))
         info("conn_success", channel.hashCode(), channel);
     }
     catch (IOException e)
     {
       // Cancel the channel's registration with our selector
 
-      if(log.isLoggable(Level.SEVERE))
-        log.log(Level.SEVERE, "conn_failure",
-          new Object[] { channel.hashCode(), channel } );
+      if(isLoggable(Level.SEVERE))
+        log(Level.SEVERE, "conn_failure", channel.hashCode(), channel);
 
-      log.throwing(this.getClass().getName(), "finishConnection", e);
+      throwing(this.getClass().getName(), "finishConnection", e);
       key.cancel();
 
       HttpResponseHandler handler =
@@ -842,7 +871,7 @@ public class HttpClient implements Runnable, ThreadFactory
     InetSocketAddress address,
     HttpResponseHandler handler) throws IOException
   {
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("initiateConnection_inv", address);
 
     SocketChannel channel = null;
@@ -867,8 +896,8 @@ public class HttpClient implements Runnable, ThreadFactory
           new ChangeRequest(
             channel, ChangeRequest.CHANGEOPS, SelectionKey.OP_WRITE));
       }
-      if(log.isLoggable(Level.INFO))
-        log.info("reused_conn");
+      if(isLoggable(Level.INFO))
+        info("reused_conn");
     }
 
     return channel;
@@ -883,8 +912,8 @@ public class HttpClient implements Runnable, ThreadFactory
   {
     // Create a non-blocking socket channel
 
-    if(log.isLoggable(Level.INFO))
-      log.info("initiateNewConnection_inv");
+    if(isLoggable(Level.FINER))
+      finer("initiateNewConnection_inv");
 
     SocketChannel socketChannel = SocketChannel.open();
     socketChannel.configureBlocking(false);
@@ -895,10 +924,10 @@ public class HttpClient implements Runnable, ThreadFactory
       socketChannel.connect(address);
     }
     catch(IllegalArgumentException e) {
-      log.throwing(this.getClass().getName(), "initiateNewConnection", e);
+      throwing(this.getClass().getName(), "initiateNewConnection", e);
     }
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("created_socket", socketChannel.hashCode(), socketChannel);
 
     // Queue a channel registration since the caller is not the
@@ -913,7 +942,7 @@ public class HttpClient implements Runnable, ThreadFactory
           SelectionKey.OP_CONNECT)
       );
 
-      if(log.isLoggable(Level.INFO))
+      if(isLoggable(Level.INFO))
         info("added_op_connect", socketChannel.hashCode(), socketChannel);
     }
 
@@ -928,7 +957,7 @@ public class HttpClient implements Runnable, ThreadFactory
       httpParsers.put(socketChannel, socketParser);
     }
 
-    if(log.isLoggable(Level.INFO))
+    if(isLoggable(Level.INFO))
       info("new_socket", socketChannel.hashCode(), socketChannel);
 
     return socketChannel;
@@ -944,29 +973,27 @@ public class HttpClient implements Runnable, ThreadFactory
     private List sendRequestQueue = new LinkedList();
     private HttpClient client;
 
-    public SendRequestManager(HttpClient client) {
+    public SendRequestManager(HttpClient client)
+    {
       this.client = client;
 
-      if(log.isLoggable(Level.INFO))
-        log.info("SendRequestManager_inv");
+      if(isLoggable(Level.FINE))
+        log(Level.FINE, "SendRequestManager_inv");
     }
 
     public void add(SendRequest request)
     {
-      if(client.log.isLoggable(Level.INFO))
+      if(isLoggable(Level.INFO))
         info("SendRequestManager1", request);
 
       synchronized(sendRequestQueue)
       {
         sendRequestQueue.add(request);
 
-        if(client.log.isLoggable(Level.INFO))
-          info("SendRequestManager2", sendRequestQueue.size());
+        if(isLoggable(Level.FINER))
+          finer("SendRequestManager2", sendRequestQueue.size());
 
         sendRequestQueue.notify();
-
-        if(client.log.isLoggable(Level.INFO))
-          log.info("SendRequestManager3");
 
       }
     }
@@ -985,7 +1012,7 @@ public class HttpClient implements Runnable, ThreadFactory
               sendRequestQueue.wait();
             }
             catch(InterruptedException e) {
-              log.throwing(this.getClass().getName(), "run", e);
+              throwing(this.getClass().getName(), "run", e);
             }
           }
 
@@ -996,13 +1023,13 @@ public class HttpClient implements Runnable, ThreadFactory
 
         try
         {
-          if(client.log.isLoggable(Level.INFO))
+          if(client.isLoggable(Level.INFO))
             info("SendRequestManager4", requests.length);
 
           client.sendBatch(requests);
         }
         catch(IOException e) {
-          HttpClient.log.throwing(this.getClass().getName(), "run", e);
+          throwing(this.getClass().getName(), "run", e);
         }
       }
     }
@@ -1021,8 +1048,7 @@ public class HttpClient implements Runnable, ThreadFactory
   private static final String HTTP_PARSER_THREAD_NAME_PREFIX =
     "sparrow-http-parser-";
 
-  private static int HTTP_PARSER_THREAD_COUNTER =
-    1;
+  private static int HTTP_PARSER_THREAD_COUNTER = 1;
 
   public void setDataInductionBufferSize(int sizeInBytes)
   {
@@ -1033,6 +1059,17 @@ public class HttpClient implements Runnable, ThreadFactory
   {
     return DATA_INDUCTION_BUFFER_SIZE;
   }
+
+  public void setLogger(Logger logger) {
+    log = logger;
+  }
+
+  public Logger getLogger() {
+    return log;
+  }
+
+
+
 
 }
 
